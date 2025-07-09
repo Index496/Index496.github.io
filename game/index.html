@@ -1,17 +1,65 @@
 <!DOCTYPE html>
-<html lang="zh-CN">
+<html lang="zh-CN" class="dark:bg-gray-900"> <!-- Added dark:bg-gray-900 for initial body background in dark mode -->
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>你好，游戏。</title>
+    <title>免费游玩在线游戏</title>
+    <!-- Configure Tailwind CSS for dark mode via class -->
+    <script>
+        tailwind.config = {
+            darkMode: 'class', // Enable dark mode based on the presence of 'dark' class
+        }
+    </script>
+    <!-- 引入 Tailwind CSS CDN -->
     <script src="https://cdn.tailwindcss.com"></script>
     <style>
+        /* 可以根据需要添加自定义CSS，或者完全依赖Tailwind */
     </style>
 </head>
-<body class="bg-gray-100 dark:bg-gray-900 flex items-center justify-center min-h-screen">
-    <div class="text-center p-8 bg-white dark:bg-gray-800 rounded-lg shadow-lg">
-        <h1 class="text-4xl font-bold text-gray-800 dark:text-white mb-4">你好，游戏。</h1>
-        <p class="text-lg text-gray-600 dark:text-gray-300">Hello, game.</p>
+<body class="bg-gradient-to-br from-blue-100 to-purple-100 min-h-screen flex items-center justify-center p-4
+             dark:from-gray-800 dark:to-gray-900 transition-colors duration-500">
+    <div class="bg-white rounded-lg shadow-xl p-8 max-w-md w-full text-center
+                dark:bg-gray-700 dark:shadow-2xl transition-colors duration-500">
+        <h1 class="text-4xl font-extrabold text-blue-700 mb-6 tracking-wide
+                   dark:text-blue-300 transition-colors duration-500">免费游玩在线游戏</h1>
+        <nav>
+            <ul class="space-y-4">
+                <li>
+                    <a href="https://catos496.github.io/game/Tetris/"
+                       class="block py-3 px-6 bg-gradient-to-r from-green-400 to-blue-500 text-white font-semibold rounded-lg shadow-md hover:from-green-500 hover:to-blue-600 transition-all duration-300 transform hover:scale-105
+                              dark:from-green-500 dark:to-blue-600 dark:hover:from-green-600 dark:hover:to-blue-700"
+                       target="_blank" rel="noopener noreferrer">
+                        俄罗斯方块
+                    </a>
+                </li>
+                <li>
+                    <a href="https://catos496.github.io/game/Gobang/"
+                       class="block py-3 px-6 bg-gradient-to-r from-red-400 to-purple-500 text-white font-semibold rounded-lg shadow-md hover:from-red-500 hover:to-purple-600 transition-all duration-300 transform hover:scale-105
+                              dark:from-red-500 dark:to-purple-600 dark:hover:from-red-600 dark:hover:to-purple-700"
+                       target="_blank" rel="noopener noreferrer">
+                        五子棋
+                    </a>
+                </li>
+            </ul>
+        </nav>
     </div>
+
+    <script>
+        // Check for user's preferred color scheme
+        if (window.matchMedia('(prefers-color-scheme: dark)').matches) {
+            document.documentElement.classList.add('dark');
+        } else {
+            document.documentElement.classList.remove('dark');
+        }
+
+        // Optional: Listen for changes in the color scheme (for dynamic changes without refresh)
+        window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', (event) => {
+            if (event.matches) {
+                document.documentElement.classList.add('dark');
+            } else {
+                document.documentElement.classList.remove('dark');
+            }
+        });
+    </script>
 </body>
 </html>
