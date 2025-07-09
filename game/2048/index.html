@@ -1,0 +1,867 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>【2048】</title>
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body {
+            font-family: 'Clear Sans', 'Helvetica Neue', Arial, sans-serif;
+            background-color: #faf8ef;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            margin: 0;
+            flex-direction: column;
+            overflow: hidden; /* 防止动画溢出导致滚动条 */
+            -webkit-user-select: none; /* 禁用文本选择 */
+            -moz-user-select: none;
+            -ms-user-select: none;
+            user-select: none;
+            -webkit-tap-highlight-color: transparent; /* 禁用点击高亮 */
+        }
+
+        .game-container {
+            background-color: #bbada0;
+            border-radius: 6px;
+            padding: var(--grid-gap); /* 使用 CSS 变量保持一致 */
+            display: grid;
+            grid-template-columns: repeat(var(--grid-size), 1fr);
+            grid-template-rows: repeat(var(--grid-size), 1fr);
+            gap: var(--grid-gap);
+            width: var(--container-width);
+            height: var(--container-height);
+            position: relative; /* 用于子级砖块的绝对定位 */
+            touch-action: none; /* 禁用浏览器默认的触控行为（如滚动） */
+        }
+
+        .grid-cell {
+            width: 100%;
+            height: 100%;
+            background-color: rgba(238, 228, 218, 0.35);
+            border-radius: 3px;
+        }
+
+        .tile {
+            position: absolute;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            border-radius: 3px;
+            font-weight: bold;
+            z-index: 2; /* 砖块应在网格单元格之上 */
+
+            /* 砖块尺寸和位置的 CSS 变量 */
+            --tile-size: calc((var(--container-width) - (var(--grid-size) + 1) * var(--grid-gap)) / var(--grid-size));
+            width: var(--tile-size);
+            height: var(--tile-size);
+            font-size: calc(var(--tile-size) / 3); /* 动态字体大小 */
+
+            /* 移动动画的默认过渡效果 */
+            transition: transform 0.15s ease-out, background-color 0.15s ease-in-out, color 0.15s ease-in-out;
+            /* transform 值由 JS 设置 */
+        }
+
+        /* 砖块出现动画（用于新砖块） */
+        .tile.tile-new {
+            transform: scale(0);
+            opacity: 0;
+            animation: appear 0.2s ease-out forwards;
+        }
+
+        @keyframes appear {
+            0% { transform: scale(0); opacity: 0; }
+            100% { transform: scale(1); opacity: 1; }
+        }
+
+        /* 砖块合并动画（脉冲效果） */
+        .tile.tile-merged-anim {
+            animation: merged-pulse 0.2s ease-in-out;
+        }
+
+        @keyframes merged-pulse {
+            0% { transform: translate(var(--tile-x), var(--tile-y)) scale(1); }
+            50% { transform: translate(var(--tile-x), var(--tile-y)) scale(1.15); } /* 稍微强一点的脉冲 */
+            100% { transform: translate(var(--tile-x), var(--tile-y)) scale(1); }
+        }
+
+        /* 砖块颜色 */
+        .tile-2 { background-color: #eee4da; color: #776e65; }
+        .tile-4 { background-color: #ede0c8; color: #776e65; }
+        .tile-8 { background-color: #f2b179; color: #f9f6f2; }
+        .tile-16 { background-color: #f59563; color: #f9f6f2; }
+        .tile-32 { background-color: #f67c5f; color: #f9f6f2; }
+        .tile-64 { background-color: #f65e3b; color: #f9f6f2; }
+        .tile-128 { background-color: #edcf72; color: #f9f6f2; font-size: calc(var(--tile-size) / 3.5); }
+        .tile-256 { background-color: #edcc61; color: #f9f6f2; font-size: calc(var(--tile-size) / 3.5); }
+        .tile-512 { background-color: #edc850; color: #f9f6f2; font-size: calc(var(--tile-size) / 3.5); }
+        .tile-1024 { background-color: #edc53f; color: #f9f9f2; font-size: calc(var(--tile-size) / 4); } /* Adjust text color slightly */
+        .tile-2048 { background-color: #edc22e; color: #f9f9f2; font-size: calc(var(--tile-size) / 4); } /* Adjust text color slightly */
+        /* 需要更多砖块值时（如 4096, 8192），请在此处添加样式 */
+        .tile-4096 { background-color: #60d9ee; color: #f9f6f2; font-size: calc(var(--tile-size) / 4); }
+        .tile-8192 { background-color: #3b88ea; color: #f9f6f2; font-size: calc(var(--tile-size) / 4); }
+
+
+        .game-overlay {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(255, 255, 255, 0.7);
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            font-size: 3rem;
+            font-weight: bold;
+            color: #776e65;
+            z-index: 10;
+            border-radius: 6px;
+        }
+
+        .new-game-button {
+            padding: 10px 20px;
+            background-color: #8f7a66;
+            color: #f9f6f2;
+            border-radius: 3px;
+            cursor: pointer;
+            font-size: 1.2rem;
+            margin-top: 20px;
+            border: none;
+            outline: none;
+            transition: background-color 0.2s;
+        }
+
+        .new-game-button:hover {
+            background-color: #9f8a76;
+        }
+    </style>
+</head>
+<body>
+    <div class="flex flex-col items-center mb-6">
+        <h1 class="text-6xl font-bold text-gray-700 mb-4">2048</h1>
+        <div class="flex gap-4">
+            <div class="bg-gray-800 text-white p-3 rounded-md text-xl font-bold">
+                分数: <span id="score">0</span>
+            </div>
+            <button id="new-game-btn-top" class="new-game-button !mt-0 !bg-orange-500 hover:!bg-orange-600">新游戏</button>
+        </div>
+    </div>
+
+    <div id="game-board" class="game-container relative">
+        <!-- 网格单元格将由 JS 生成 -->
+        <!-- 砖块将作为子元素动态添加，用于绝对定位 -->
+    </div>
+
+    <script>
+        const GRID_SIZE = 4;
+        const GRID_GAP = 12; // px
+        const CONTAINER_WIDTH = 500; // px
+        const ANIMATION_DURATION = 150; // ms (应与 CSS transition 持续时间匹配)
+        const TOUCH_SWIPE_THRESHOLD = 50; // 触摸滑动最小距离 (px)
+
+        // 设置 CSS 变量，供样式使用
+        document.documentElement.style.setProperty('--grid-size', GRID_SIZE);
+        document.documentElement.style.setProperty('--grid-gap', `${GRID_GAP}px`);
+        document.documentElement.style.setProperty('--container-width', `${CONTAINER_WIDTH}px`);
+        document.documentElement.style.setProperty('--container-height', `${CONTAINER_WIDTH}px`); /* 使其为正方形 */
+
+        const TILE_SIZE = (CONTAINER_WIDTH - (GRID_SIZE + 1) * GRID_GAP) / GRID_SIZE;
+
+        let board = Array(GRID_SIZE).fill(0).map(() => Array(GRID_SIZE).fill(null)); // 存储 Tile 对象或 null
+        let tiles = new Map(); // Map<tileId, TileObject> 用于快速查找和管理所有活动砖块
+        let nextTileId = 0; // 每个砖块的唯一 ID
+        let score = 0;
+        let gameOver = false;
+        let win = false;
+        let isAnimating = false; // 用于防止动画期间响应新的移动操作
+
+        const gameBoardElement = document.getElementById('game-board');
+        const scoreElement = document.getElementById('score');
+        const newGameButtonTop = document.getElementById('new-game-btn-top');
+
+        // --- 触控变量 ---
+        let touchStartX = 0;
+        let touchStartY = 0;
+        // --- 触控变量结束 ---
+
+        // --- 音效合成部分 ---
+        // 使用单例模式获取 AudioContext
+        let audioContext = null;
+        function getAudioContext() {
+            if (!audioContext) {
+                audioContext = new (window.AudioContext || window.webkitAudioContext)();
+            }
+            return audioContext;
+        }
+
+        // 通用播放函数
+        function playSound(soundType) {
+            // Web Audio API 通常要求有用户交互才能首次播放声音。
+            // 确保在第一次用户交互（例如点击新游戏按钮）后初始化或恢复 AudioContext。
+            // 我们的游戏逻辑已经确保了这一点，因为 playSound 是在用户操作后才调用的。
+            const context = getAudioContext();
+            if (context.state === 'suspended') {
+                context.resume().then(() => {
+                    // console.log('AudioContext resumed!');
+                    _playSoundImpl(soundType);
+                }).catch(e => console.error('Error resuming AudioContext:', e));
+            } else {
+                _playSoundImpl(soundType);
+            }
+        }
+
+        function _playSoundImpl(soundType) {
+            switch (soundType) {
+                case 'move':
+                    playMoveEffect();
+                    break;
+                case 'merge':
+                    playMergeEffect();
+                    break;
+                case 'newTile':
+                    playNewTileEffect();
+                    break;
+                case 'gameOver':
+                    playGameOverEffect();
+                    break;
+                case 'win':
+                    playWinEffect();
+                    break;
+            }
+        }
+
+        // 1. 新砖块出现音效 (清脆的高频“叮”声)
+        function playNewTileEffect() {
+            const context = getAudioContext();
+            const oscillator = context.createOscillator();
+            const gainNode = context.createGain();
+
+            oscillator.type = 'sine'; // 正弦波，最纯净
+            oscillator.frequency.value = 980; // 更高的频率，听起来更轻快
+
+            gainNode.gain.setValueAtTime(0, context.currentTime);
+            gainNode.gain.linearRampToValueAtTime(0.4, context.currentTime + 0.005); // 极速渐强 (Attack)
+            gainNode.gain.exponentialRampToValueAtTime(0.001, context.currentTime + 0.12); // 更快的指数渐弱 (Release)
+
+            oscillator.connect(gainNode);
+            gainNode.connect(context.destination);
+
+            oscillator.start(context.currentTime);
+            oscillator.stop(context.currentTime + 0.12); // 短暂的持续时间
+        }
+
+        // 2. 合并音效 (有力且清脆的“砰”声)
+        function playMergeEffect() {
+            const context = getAudioContext();
+            const oscillator = context.createOscillator();
+            const gainNode = context.createGain();
+            const filter = context.createBiquadFilter();
+
+            oscillator.type = 'triangle'; // 三角波，比锯齿波柔和，比正弦波有更多泛音
+            oscillator.frequency.value = 400; // 较中等的频率
+
+            // 稍微调高一点频率，营造“上升”感
+            oscillator.frequency.setValueAtTime(400, context.currentTime);
+            oscillator.frequency.linearRampToValueAtTime(800, context.currentTime + 0.05);
+
+            filter.type = 'lowpass'; // 低通滤波器
+            filter.frequency.setValueAtTime(2000, context.currentTime); // 初始截止频率
+            filter.Q.setValueAtTime(1, context.currentTime); // 初始Q值
+
+            gainNode.gain.setValueAtTime(0, context.currentTime);
+            gainNode.gain.linearRampToValueAtTime(0.6, context.currentTime + 0.01); // 快速攻击，更强的峰值
+            gainNode.gain.exponentialRampToValueAtTime(0.001, context.currentTime + 0.2); // 快速衰减
+
+            oscillator.connect(filter);
+            filter.connect(gainNode);
+            gainNode.connect(context.destination);
+
+            oscillator.start(context.currentTime);
+            oscillator.stop(context.currentTime + 0.2);
+        }
+
+        // 3. 移动音效 (更流畅、清澈的“嗖”声)
+        function playMoveEffect() {
+            const context = getAudioContext();
+            const bufferSize = context.sampleRate * 0.1; // 0.1 秒的白噪音
+            const buffer = context.createBuffer(1, bufferSize, context.sampleRate);
+            const output = buffer.getChannelData(0);
+            for (let i = 0; i < bufferSize; i++) {
+                output[i] = Math.random() * 2 - 1; // 生成白噪音
+            }
+
+            const noise = context.createBufferSource();
+            noise.buffer = buffer;
+
+            const filter = context.createBiquadFilter();
+            filter.type = 'bandpass'; // 带通滤波器
+            filter.frequency.setValueAtTime(300, context.currentTime); // 初始频率更低
+            filter.frequency.linearRampToValueAtTime(4500, context.currentTime + 0.1); // 扫频范围更广，感觉更“嗖”
+
+            const gainNode = context.createGain();
+            gainNode.gain.setValueAtTime(0, context.currentTime);
+            gainNode.gain.linearRampToValueAtTime(0.25, context.currentTime + 0.01); // 略微增加峰值
+            gainNode.gain.linearRampToValueAtTime(0, context.currentTime + 0.1); // 快速衰减
+
+            noise.connect(filter);
+            filter.connect(gainNode);
+            gainNode.connect(context.destination);
+
+            noise.start(context.currentTime);
+            noise.stop(context.currentTime + 0.1);
+        }
+
+        // 4. 游戏结束音效 (柔和而悲伤的下降音)
+        function playGameOverEffect() {
+            const context = getAudioContext();
+            const oscillator1 = context.createOscillator();
+            const oscillator2 = context.createOscillator();
+            const gainNode = context.createGain();
+
+            oscillator1.type = 'triangle'; // 柔和的三角波
+            oscillator2.type = 'triangle';
+
+            // 频率从高到低下降，但更平滑，且略有失谐感
+            oscillator1.frequency.setValueAtTime(280, context.currentTime);
+            oscillator1.frequency.linearRampToValueAtTime(140, context.currentTime + 0.8);
+
+            oscillator2.frequency.setValueAtTime(270, context.currentTime); // 比 oscillator1 略低，制造一点不和谐但并非刺耳感
+            oscillator2.frequency.linearRampToValueAtTime(130, context.currentTime + 0.8);
+
+            gainNode.gain.setValueAtTime(0.3, context.currentTime);
+            gainNode.gain.linearRampToValueAtTime(0.001, context.currentTime + 0.7); // 渐出时间稍短
+
+            oscillator1.connect(gainNode);
+            oscillator2.connect(gainNode);
+            gainNode.connect(context.destination);
+
+            oscillator1.start(context.currentTime);
+            oscillator2.start(context.currentTime);
+            oscillator1.stop(context.currentTime + 0.8);
+            oscillator2.stop(context.currentTime + 0.8);
+        }
+
+        // 5. 胜利音效 (欢快且更清晰的上升琶音)
+        function playWinEffect() {
+            const context = getAudioContext();
+            const baseFreq = 660; // E5
+            const notes = [0, 2, 4, 7, 12]; // E, F#, G#, B, E (高八度)
+            const durationPerNote = 0.12; // 每个音符的持续时间略长一点点
+            const totalDuration = notes.length * durationPerNote;
+
+            notes.forEach((semitoneOffset, index) => {
+                const freq = baseFreq * Math.pow(2, semitoneOffset / 12);
+                const startTime = context.currentTime + index * durationPerNote;
+
+                const oscillator = context.createOscillator();
+                const gainNode = context.createGain();
+
+                oscillator.type = 'sine'; // 使用正弦波，更纯净，每个音符更突出
+                oscillator.frequency.setValueAtTime(freq, startTime);
+
+                // 更清晰的 ADSR 包络
+                gainNode.gain.setValueAtTime(0, startTime);
+                gainNode.gain.linearRampToValueAtTime(0.25, startTime + 0.01); // 快速攻击，略高音量
+                gainNode.gain.linearRampToValueAtTime(0.15, startTime + 0.03); // 快速衰减到 sustain
+                gainNode.gain.linearRampToValueAtTime(0.001, startTime + durationPerNote - 0.02); // 释放时间
+
+                oscillator.connect(gainNode);
+                gainNode.connect(context.destination);
+
+                oscillator.start(startTime);
+                oscillator.stop(startTime + durationPerNote);
+            });
+        }
+        // --- 音效合成部分结束 ---
+
+
+        class Tile {
+            constructor(value, r, c, id) {
+                this.id = id || nextTileId++;
+                this.value = value;
+                this.r = r;
+                this.c = c;
+                this.oldR = r; // 用于跟踪动画起始位置的旧行号
+                this.oldC = c; // 用于跟踪动画起始位置的旧列号
+                this.mergedFrom = null; // 存储合并到此砖块的砖块 ID 数组
+                this.isNew = true; // 用于初始出现动画的标志
+                this.element = null; // DOM 元素引用
+            }
+
+            // 计算砖块在棋盘上的像素位置
+            get x() { return this.c * (TILE_SIZE + GRID_GAP) + GRID_GAP; }
+            get y() { return this.r * (TILE_SIZE + GRID_GAP) + GRID_GAP; }
+        }
+
+        function initializeGame() {
+            board = Array(GRID_SIZE).fill(0).map(() => Array(GRID_SIZE).fill(null));
+            tiles.clear();
+            nextTileId = 0;
+            score = 0;
+            gameOver = false;
+            win = false;
+            isAnimating = false;
+            scoreElement.textContent = score;
+
+            // 清除任何现有的游戏结束/胜利覆盖层
+            const existingOverlay = document.querySelector('.game-overlay');
+            if (existingOverlay) {
+                existingOverlay.remove();
+            }
+
+            // 清除 DOM 中现有的砖块元素
+            gameBoardElement.querySelectorAll('.tile').forEach(tileEl => tileEl.remove());
+            // 重新渲染网格单元格（如果尚未存在）
+            renderGridCells();
+
+            addRandomTile();
+            addRandomTile();
+            renderTiles(); // 初始渲染砖块
+        }
+
+        function renderGridCells() {
+            // 只渲染一次网格单元格，它们是静态背景
+            if (gameBoardElement.querySelectorAll('.grid-cell').length === 0) {
+                for (let r = 0; r < GRID_SIZE; r++) {
+                    for (let c = 0; c < GRID_SIZE; c++) {
+                        const gridCell = document.createElement('div');
+                        gridCell.classList.add('grid-cell');
+                        gameBoardElement.appendChild(gridCell);
+                    }
+                }
+            }
+        }
+
+        function renderTiles() {
+            tiles.forEach(tile => {
+                if (!tile.element) {
+                    // 为砖块创建新的 DOM 元素
+                    tile.element = document.createElement('div');
+                    tile.element.id = `tile-${tile.id}`;
+                    tile.element.classList.add('tile');
+                    tile.element.textContent = tile.value;
+                    gameBoardElement.appendChild(tile.element);
+
+                    // 对于新砖块，添加 'tile-new' 类以实现出现动画
+                    if (tile.isNew) {
+                        tile.element.classList.add('tile-new');
+                        // 动画结束后移除该类，以允许后续移动
+                        tile.element.addEventListener('animationend', () => {
+                            tile.element.classList.remove('tile-new');
+                        }, { once: true });
+                        tile.isNew = false; // 初始渲染后标记为非新砖块
+                    }
+                }
+
+                // 更新砖块值和类
+                tile.element.textContent = tile.value;
+                // 移除所有 tile-X 类并添加正确的类
+                tile.element.className = 'tile'; // 重置类
+                tile.element.classList.add(`tile-${tile.value}`);
+
+                // 使用 transform 设置位置
+                tile.element.style.transform = `translate(${tile.x}px, ${tile.y}px)`;
+                // 为合并动画设置 CSS 变量
+                tile.element.style.setProperty('--tile-x', `${tile.x}px`);
+                tile.element.style.setProperty('--tile-y', `${tile.y}px`);
+
+                // 处理合并砖块的清理和脉冲动画
+                if (tile.mergedFrom) {
+                    // 从 DOM 中移除源砖块（它们滑入并被合并了）
+                    tile.mergedFrom.forEach(mergedId => {
+                        const mergedTileEl = document.getElementById(`tile-${mergedId}`);
+                        if (mergedTileEl) {
+                            mergedTileEl.remove();
+                            // 如果还存在于 tiles map 中，也对其进行删除处理
+                            tiles.delete(mergedId);
+                        }
+                    });
+                    tile.mergedFrom = null; // 处理后清除 mergedFrom 标志
+
+                    // 对目标砖块添加脉冲动画
+                    tile.element.classList.add('tile-merged-anim');
+                    // 动画结束后移除该类
+                    tile.element.addEventListener('animationend', () => {
+                        tile.element.classList.remove('tile-merged-anim');
+                    }, { once: true });
+                }
+            });
+        }
+
+        function addRandomTile() {
+            if (isBoardFull()) {
+                return;
+            }
+
+            let emptyCells = [];
+            for (let r = 0; r < GRID_SIZE; r++) {
+                for (let c = 0; c < GRID_SIZE; c++) {
+                    if (board[r][c] === null) {
+                        emptyCells.push({ r, c });
+                    }
+                }
+            }
+
+            if (emptyCells.length > 0) {
+                const { r, c } = emptyCells[Math.floor(Math.random() * emptyCells.length)];
+                const newValue = Math.random() < 0.9 ? 2 : 4; // 90% 概率生成 2，10% 概率生成 4
+                const newTile = new Tile(newValue, r, c);
+                board[r][c] = newTile;
+                tiles.set(newTile.id, newTile);
+                playSound('newTile'); // 添加新砖块时播放音效
+            }
+        }
+
+        function isBoardFull() {
+            for (let r = 0; r < GRID_SIZE; r++) {
+                for (let c = 0; c < GRID_SIZE; c++) {
+                    if (board[r][c] === null) {
+                        return false;
+                    }
+                }
+            }
+            return true;
+        }
+
+        function checkGameOver() {
+            if (!isBoardFull()) {
+                return false;
+            }
+
+            // 检查是否有可行的合并（水平或垂直）
+            for (let r = 0; r < GRID_SIZE; r++) {
+                for (let c = 0; c < GRID_SIZE; c++) {
+                    const tile = board[r][c];
+                    if (!tile) continue; // 棋盘已满时不应该发生，但作为安全措施
+
+                    const value = tile.value;
+                    // 检查右侧
+                    if (c + 1 < GRID_SIZE && board[r][c + 1] && board[r][c + 1].value === value) {
+                        return false; // 存在可合并项
+                    }
+                    // 检查下方
+                    if (r + 1 < GRID_SIZE && board[r + 1][c] && board[r + 1][c].value === value) {
+                        return false; // 存在可合并项
+                    }
+                }
+            }
+            return true; // 没有空单元格且没有可合并项
+        }
+
+        function showOverlay(message, isWin) {
+            const overlay = document.createElement('div');
+            overlay.classList.add('game-overlay');
+            overlay.innerHTML = `
+                <p>${message}</p>
+                <button id="restart-game-btn" class="new-game-button">${isWin ? '继续游戏' : '再来一局'}</button>
+            `;
+            gameBoardElement.appendChild(overlay);
+
+            if (isWin) {
+                playSound('win');
+            } else {
+                playSound('gameOver');
+            }
+
+            document.getElementById('restart-game-btn').addEventListener('click', () => {
+                if (isWin) { // 如果胜利，允许继续游戏 (这是 2048 的一个常见变体)
+                    overlay.remove();
+                    win = false; // 重置胜利标志，以便可以继续移动
+                    isAnimating = false; // 解锁游戏
+                } else {
+                    initializeGame();
+                }
+            });
+        }
+
+
+        // --- 游戏逻辑核心：移动函数 ---
+        // 辅助函数：滑动并合拢单行（或单列）
+        function operateLine(currentLine) {
+            let processedLine = currentLine.filter(tile => tile !== null); // 移除空单元格
+            let newScoreAdded = 0;
+            let hasMergedInLine = false; // 跟踪此行是否发生了合并
+
+            // 1. 合并操作
+            for (let i = 0; i < processedLine.length - 1; i++) {
+                if (processedLine[i].value !== 0 && processedLine[i].value === processedLine[i + 1].value) {
+                    const mergedValue = processedLine[i].value * 2;
+                    newScoreAdded += mergedValue;
+                    hasMergedInLine = true;
+
+                    // 更新第一个砖块的值
+                    processedLine[i].value = mergedValue;
+                    // 标记第一个砖块吸收了第二个砖块
+                    processedLine[i].mergedFrom = processedLine[i].mergedFrom || [];
+                    processedLine[i].mergedFrom.push(processedLine[i+1].id);
+
+                    // 从处理后的行中概念性地移除第二个砖块（它稍后会从 DOM 中移除）
+                    processedLine.splice(i + 1, 1);
+                    i--; // 递减 i 以重新检查此位置处的新砖块（或行的剩余部分）
+                    if (mergedValue === 2048) {
+                        win = true; // 达到 2048 胜利条件
+                    }
+                }
+            }
+
+            // 2. 将行填充回 GRID_SIZE，用 null 填充空位
+            let newLine = Array(GRID_SIZE).fill(null);
+            for (let i = 0; i < processedLine.length; i++) {
+                newLine[i] = processedLine[i];
+            }
+
+            // 检查行是否实际发生了变化（砖块位置、值变化或数量变化）
+            let hasMovedInLine = false;
+            for(let i = 0; i < GRID_SIZE; i++) {
+                const oldTileInLine = currentLine[i];
+                const newTileInLine = newLine[i];
+
+                // 如果旧位置有砖块但新位置没有 (表示砖块被移走或合并了)
+                // 或者新位置有砖块但旧位置没有 (表示有新砖块滑入该位置)
+                // 或者同一个砖块，但其在这一行的逻辑位置改变了
+                if ((oldTileInLine !== null && newTileInLine === null) ||
+                    (oldTileInLine === null && newTileInLine !== null) ||
+                    (oldTileInLine && newTileInLine && oldTileInLine.id !== newTileInLine.id) || // 不同砖块
+                    (oldTileInLine && newTileInLine && oldTileInLine.id === newTileInLine.id &&
+                     // 检查其在原始线和新线中的索引是否不同，即是否有物理位移
+                     currentLine.indexOf(oldTileInLine) !== newLine.indexOf(newTileInLine))) {
+                    hasMovedInLine = true;
+                    break;
+                }
+            }
+            return { newLine: newLine, scoreChange: newScoreAdded, hasMovedInLine: hasMovedInLine, hasMergedInLine: hasMergedInLine };
+        }
+
+
+        async function move(direction) {
+            if (gameOver || win || isAnimating) return; // 游戏结束、胜利或正在动画时，不响应新的移动
+            isAnimating = true; // 锁定游戏，开始动画
+
+            let boardChanged = false; // 整个棋盘是否发生变化
+            let currentScoreAdded = 0; // 本次移动增加的总分数
+            let currentMoveCausedMerge = false; // 本次移动是否导致了任何合并
+
+            // 临时存储所有砖块移动前的 (r, c) 位置，用于后续动画计算。
+            // 每次移动前都更新所有砖块的旧位置。
+            tiles.forEach(tile => {
+                tile.oldR = tile.r;
+                tile.oldC = tile.c;
+            });
+
+
+            // 遍历棋盘的行或列，进行滑动和合并操作
+            if (direction === 'left' || direction === 'right') {
+                for (let r = 0; r < GRID_SIZE; r++) {
+                    let row = [];
+                    for (let c = 0; c < GRID_SIZE; c++) {
+                        row.push(board[r][c]); // 获取现有砖块对象
+                    }
+
+                    if (direction === 'right') {
+                        row.reverse(); // 向右移动时，反转行以向左处理
+                    }
+
+                    // 对当前行执行操作
+                    const { newLine, scoreChange, hasMovedInLine, hasMergedInLine } = operateLine(row);
+
+                    if (hasMovedInLine) { // 只有行内发生变化才进行更新
+                        if (direction === 'right') {
+                            newLine.reverse(); // 恢复原始列顺序
+                        }
+                        boardChanged = true;
+                        if (hasMergedInLine) currentMoveCausedMerge = true;
+                        currentScoreAdded += scoreChange;
+
+                        // 更新当前棋盘格子的砖块位置/值
+                        for (let c = 0; c < GRID_SIZE; c++) {
+                            const newTile = newLine[c]; // 这是从 operateLine 返回的 Tile 对象引用
+
+                            if (newTile) {
+                                // 更新砖块的当前位置 (r, c)
+                                newTile.r = r;
+                                newTile.c = c;
+                            }
+                            board[r][c] = newTile; // 将 Tile 对象（或 null）放入棋盘
+                        }
+                    }
+                }
+            } else if (direction === 'up' || direction === 'down') {
+                for (let c = 0; c < GRID_SIZE; c++) {
+                    let col = [];
+                    for (let r = 0; r < GRID_SIZE; r++) {
+                        col.push(board[r][c]);
+                    }
+
+                    if (direction === 'down') {
+                        col.reverse(); // 向下移动时，反转列以向上处理
+                    }
+
+                    // 对当前列执行操作
+                    const { newLine, scoreChange, hasMovedInLine, hasMergedInLine } = operateLine(col);
+
+                    if (hasMovedInLine) { // 只有列内发生变化才进行更新
+                        if (direction === 'down') {
+                            newLine.reverse(); // 恢复原始行顺序
+                        }
+                        boardChanged = true;
+                        if (hasMergedInLine) currentMoveCausedMerge = true;
+                        currentScoreAdded += scoreChange;
+
+                        for (let r = 0; r < GRID_SIZE; r++) {
+                            const newTile = newLine[r];
+
+                            if (newTile) {
+                                newTile.r = r;
+                                newTile.c = c;
+                            }
+                            board[r][c] = newTile;
+                        }
+                    }
+                }
+            }
+
+            if (boardChanged) {
+                score += currentScoreAdded;
+                scoreElement.textContent = score;
+
+                // 根据移动结果播放音效
+                if (currentMoveCausedMerge) {
+                    playSound('merge');
+                } else {
+                    playSound('move');
+                }
+
+                // 清理不再在棋盘上的砖块（例如，已合并消失的砖块）
+                let newTilesMap = new Map();
+                for (let r = 0; r < GRID_SIZE; r++) {
+                    for (let c = 0; c < GRID_SIZE; c++) {
+                        const tile = board[r][c];
+                        if (tile) {
+                            newTilesMap.set(tile.id, tile);
+                            // 同时确保 mergedFrom 砖块也从全局 'tiles' map 中移除（它们在 DOM 渲染时也会被移除）
+                            if (tile.mergedFrom) {
+                                tile.mergedFrom.forEach(mergedId => newTilesMap.delete(mergedId));
+                            }
+                        }
+                    }
+                }
+                tiles = newTilesMap; // 更新全局 'tiles' map
+
+                renderTiles(); // 重新渲染所有活动砖块（它们的 position 将更新，CSS transition 将接管）
+
+                // 等待移动和合并动画完成
+                await new Promise(resolve => setTimeout(resolve, ANIMATION_DURATION));
+
+
+                // 动画完成后，添加新的砖块并检查游戏状态
+                if (win) {
+                    showOverlay("恭喜你！你达到了 2048！🎉", true);
+                } else {
+                    addRandomTile(); // 这会播放 'newTile' 音效
+                    renderTiles(); // 渲染新添加的砖块，并播放其“出现”动画
+                    await new Promise(resolve => setTimeout(resolve, ANIMATION_DURATION + 50)); // 等待新砖块出现动画
+
+                    if (checkGameOver()) {
+                        gameOver = true;
+                        showOverlay("游戏结束！再来一局？", false);
+                    }
+                }
+            }
+            isAnimating = false; // 解锁游戏，允许下一次移动
+        }
+
+        // 键盘输入事件监听器
+        document.addEventListener('keydown', (e) => {
+            if (gameOver || win || isAnimating) return; // 游戏结束、胜利或正在动画时，不响应按键
+
+            switch (e.key) {
+                case 'ArrowUp':
+                    e.preventDefault();
+                    move('up');
+                    break;
+                case 'ArrowDown':
+                    e.preventDefault();
+                    move('down');
+                    break;
+                case 'ArrowLeft':
+                    e.preventDefault();
+                    move('left');
+                    break;
+                case 'ArrowRight':
+                    e.preventDefault();
+                    move('right');
+                    break;
+            }
+        });
+
+        // --- 触控事件监听器 ---
+        gameBoardElement.addEventListener('touchstart', (e) => {
+            if (gameOver || win || isAnimating) return;
+            e.preventDefault(); // 阻止默认的滚动行为
+            const touch = e.touches[0];
+            touchStartX = touch.clientX;
+            touchStartY = touch.clientY;
+        }, { passive: false }); // 使用 { passive: false } 允许 preventDefault
+
+        gameBoardElement.addEventListener('touchmove', (e) => {
+            // 在 touchmove 期间阻止默认滚动行为，以确保流畅的游戏体验
+            e.preventDefault();
+        }, { passive: false });
+
+        gameBoardElement.addEventListener('touchend', (e) => {
+            if (gameOver || win || isAnimating) return;
+            const touch = e.changedTouches[0];
+            const touchEndX = touch.clientX;
+            const touchEndY = touch.clientY;
+
+            const dx = touchEndX - touchStartX;
+            const dy = touchEndY - touchStartY;
+
+            // 检查滑动距离是否达到阈值
+            if (Math.abs(dx) > TOUCH_SWIPE_THRESHOLD || Math.abs(dy) > TOUCH_SWIPE_THRESHOLD) {
+                // 判断是水平滑动还是垂直滑动
+                if (Math.abs(dx) > Math.abs(dy)) {
+                    // 水平滑动
+                    if (dx > 0) {
+                        move('right');
+                    } else {
+                        move('left');
+                    }
+                } else {
+                    // 垂直滑动
+                    if (dy > 0) {
+                        move('down');
+                    } else {
+                        move('up');
+                    }
+                }
+            }
+            // 重置起始触摸点
+            touchStartX = 0;
+            touchStartY = 0;
+        });
+
+        // 防止整个页面的默认滚动，尤其在某些移动浏览器上
+        document.addEventListener('touchmove', (e) => {
+            if (gameBoardElement.contains(e.target)) {
+                // 如果触摸事件在游戏板内部，则由游戏板的 touchmove 处理，阻止默认行为
+                // 否则，允许页面其他部分的滚动
+            } else {
+                // 对于游戏板之外的区域，允许正常的页面滚动
+            }
+        }, { passive: false });
+
+
+        newGameButtonTop.addEventListener('click', initializeGame);
+
+        // 页面加载时初始化游戏
+        initializeGame();
+
+    </script>
+</body>
+</html>
