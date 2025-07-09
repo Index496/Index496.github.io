@@ -1,0 +1,640 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>五子棋游戏</title>
+    <!-- 引入 Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        /*
+         * 自定义 CSS 变量，便于统一管理棋盘尺寸和样式
+         */
+        :root {
+            --grid-unit: 40px;      /* 两个相邻网格线中心之间的距离，即一个格子的大小 */
+            --line-thickness: 2px;  /* 网格线的粗细 */
+            --line-color: #333;     /* 网格线颜色 (深色以便清晰可见) */
+            /* 棋盘边缘到最外围网格线中心点的距离。
+               这个值决定了棋盘四周的留白区域。
+            */
+            --board-margin: 20px;
+            --stone-diameter: calc(var(--grid-unit) * 0.9);    /* 棋子直径，略小于格间距 */
+            --star-point-diameter: 8px;                         /* 星位点的大小 */
+            --board-dimension: 15; /* 棋盘的维数（15x15，即15条横线和15条竖线），这个值将由JS动态改变 */
+
+            /* 默认亮色模式下的背景和文本颜色变量 */
+            --body-bg-start: #f3f4f6; /* gray-100 */
+            --body-bg-end: #d1d5db;   /* gray-300 */
+            --text-primary: #1f2937;  /* gray-800 */
+            --text-secondary: #1d4ed8; /* blue-700 */
+
+            /* 开关的颜色变量 */
+            --toggle-bg-off: #ccc;
+            --toggle-bg-on: #3b82f6; /* 蓝色 (Tailwind blue-500) */
+            --toggle-handle-color: white;
+        }
+
+        /* 深色模式下的颜色变量 */
+        body.dark-mode {
+            --body-bg-start: #1a202c; /* dark gray / almost black */
+            --body-bg-end: #2d3748;   /* slightly lighter dark gray */
+            --text-primary: #a0aec0;  /* light gray for text */
+            --text-secondary: #63b3ed; /* light blue for status */
+            --line-color: #6b7280;    /* adjusted line color for dark mode */
+            /* 棋盘和棋子颜色保持不变，因为它们通常是木色和黑白棋，不直接受亮暗模式影响 */
+        }
+
+        /* 应用颜色变量到 body 和其他元素 */
+        body {
+            background: linear-gradient(to bottom right, var(--body-bg-start), var(--body-bg-end));
+            color: var(--text-primary);
+            transition: background 0.3s ease, color 0.3s ease; /* 平滑过渡 */
+        }
+
+        h1 {
+            color: var(--text-primary);
+        }
+
+        #game-status {
+            color: var(--text-secondary);
+        }
+
+        /*
+         * 棋盘主体样式
+         */
+        #board {
+            /* 棋盘总宽度/高度计算：
+               (棋盘维数 - 1) * 每个格子的间距 (即网格单元距离) + 两侧的 --board-margin。
+               例如15x15棋盘有14个格子间距。
+            */
+            width: calc((var(--board-dimension) - 1) * var(--grid-unit) + 2 * var(--board-margin));
+            height: calc((var(--board-dimension) - 1) * var(--grid-unit) + 2 * var(--board-margin));
+
+            background-color: #f0d099; /* 棋盘木纹色 */
+            border: 2px solid #333; /* 棋盘边框 */
+            box-shadow: 5px 5px 15px rgba(0,0,0,0.3);
+            position: relative; /* 用于绝对定位棋子、星位和点击区域 */
+            overflow: hidden; /* 防止内容溢出棋盘边界 */
+            border-radius: 5px; /* 略带圆角的棋盘 */
+
+            /* 使用 background-image 绘制棋盘线 */
+            background-image:
+                /* 垂直线：从左到右重复绘制 */
+                repeating-linear-gradient(to right,
+                    var(--line-color) 0,                  /* 从0px开始绘制线颜色 */
+                    var(--line-color) var(--line-thickness), /* 线条绘制到指定厚度 */
+                    transparent var(--line-thickness),    /* 从线尾开始透明 */
+                    transparent var(--grid-unit)          /* 透明到下一个重复单元的起始点 (下一个格子的开始) */
+                ),
+                /* 水平线：从上到下重复绘制 */
+                repeating-linear-gradient(to bottom,
+                    var(--line-color) 0,
+                    var(--line-color) var(--line-thickness),
+                    transparent var(--line-thickness),
+                    transparent var(--grid-unit)
+                );
+
+            /* 设置 background-image 的起始位置，使其第一条线的中心对齐到 --board-margin */
+            /* gradient 从 0px 开始绘制线，线的中心在 line-thickness / 2 位置。
+               为了让这条线的中心在 board-margin 位置，背景图像的 0px 处需要位于 board-margin - line-thickness / 2。
+            */
+            background-position:
+                calc(var(--board-margin) - var(--line-thickness) / 2)
+                calc(var(--board-margin) - var(--line-thickness) / 2);
+
+            /* 每个重复单元的宽度和高度就是 --grid-unit */
+            background-size: var(--grid-unit) var(--grid-unit);
+            background-repeat: repeat; /* 重复绘制背景图以覆盖整个棋盘 */
+        }
+
+        /*
+         * 棋盘上的点击区域 (代表交叉点)
+         */
+        .board-cell {
+            position: absolute; /* 绝对定位在棋盘上 */
+            /* 点击区域的尺寸与一个格子相同，方便居中和点击 */
+            width: var(--grid-unit);
+            height: var(--grid-unit);
+            cursor: pointer;
+            z-index: 10; /* 确保在棋盘背景线之上，但低于棋子和星位 */
+
+            display: flex; /* 为了方便中心对齐其内部可能放置的棋子 */
+            justify-content: center;
+            align-items: center;
+            /* background-color: rgba(255, 0, 0, 0.05); /* 调试用，显示点击区域，可以取消注释查看 */
+            border-radius: 50%; /* 让悬停效果是圆形的 */
+        }
+
+        .board-cell:hover {
+            background-color: rgba(0, 0, 0, 0.08); /* 鼠标悬停时的效果 */
+        }
+
+        /*
+         * 棋子样式基础
+         */
+        .stone {
+            width: var(--stone-diameter);
+            height: var(--stone-diameter);
+            border-radius: 50%; /* 圆形 */
+            position: absolute; /* 相对于 #board 父元素定位 */
+            pointer-events: none; /* 让点击穿透到下面的 cell，触发 cell 的点击事件 */
+            transform: translate(-50%, -50%); /* 确保棋子自身的中心与 top/left 点对齐 */
+            z-index: 20; /* 棋子在星位之上 */
+
+            /* 初始状态：透明且缩小 */
+            opacity: 0;
+            transform: translate(-50%, -50%) scale(0.5);
+        }
+
+        /* ** NEW: 棋子主题样式 ** */
+
+        /* 默认风格 */
+        .stone-black-default {
+            background: radial-gradient(circle at 30% 30%, #555, #000); /* 黑色棋子渐变 */
+            box-shadow: 1px 1px 3px rgba(0,0,0,0.5); /* 棋子阴影 */
+        }
+        .stone-white-default {
+            background: radial-gradient(circle at 30% 30%, #fff, #999); /* 白色棋子渐变 */
+            border: 1px solid #777; /* 白色棋子添加边框以便在浅色棋盘上更清晰 */
+            box-shadow: 1px 1px 3px rgba(0,0,0,0.5);
+        }
+
+        /* 光泽风格 */
+        .stone-black-glossy {
+            background: radial-gradient(circle at 20% 20%, #888, #000);
+            box-shadow: 3px 3px 8px rgba(0,0,0,0.8); /* 更强烈的阴影和高光 */
+        }
+        .stone-white-glossy {
+            background: radial-gradient(circle at 20% 20%, #fff, #bbb);
+            border: 1px solid #aaa;
+            box-shadow: 3px 3px 8px rgba(0,0,0,0.4);
+        }
+
+        /* 哑光风格 */
+        .stone-black-matte {
+            background-color: #2a2a2a; /* 扁平的深灰色 */
+            box-shadow: none; /* 无光泽，无明显阴影 */
+            border: 1px solid #444; /* 略微的边框 */
+        }
+        .stone-white-matte {
+            background-color: #e0e0e0; /* 扁平的浅灰色 */
+            border: 1px solid #c0c0c0;
+            box-shadow: none;
+        }
+
+        /* 落子动画 */
+        .stone.placed {
+            animation: stone-drop 0.35s ease-out forwards; /* 动画时长0.35秒，动画结束后保持最后一帧状态 */
+        }
+
+        @keyframes stone-drop {
+            0% {
+                opacity: 0;
+                transform: translate(-50%, -50%) scale(0.5); /* 动画开始时棋子小且透明 */
+            }
+            80% {
+                opacity: 1;
+                transform: translate(-50%, -50%) scale(1.1); /* 快速放大并略微超出最终大小 */
+            }
+            100% {
+                opacity: 1;
+                transform: translate(-50%, -50%) scale(1);   /* 回弹到最终大小和不透明度 */
+            }
+        }
+
+        /*
+         * 星位样式
+         */
+        .star-point {
+            position: absolute;
+            width: var(--star-point-diameter);
+            height: var(--star-point-diameter);
+            background-color: #333; /* 星位是黑色的 */
+            border-radius: 50%;
+            z-index: 15; /* 在棋盘线和点击区域之上，棋子之下 */
+            transform: translate(-50%, -50%); /* 精确居中 */
+        }
+
+        /* 获胜棋子高亮样式 */
+        .winning-stone {
+            box-shadow: 0 0 15px 5px rgba(255, 255, 0, 0.7); /* 黄色光晕 */
+            animation: pulse-glow 1.5s infinite alternate; /* 棋子持续脉冲发光 */
+        }
+
+        @keyframes pulse-glow {
+            0% { box-shadow: 0 0 10px 3px rgba(255, 255, 0, 0.7); }
+            100% { box-shadow: 0 0 20px 8px rgba(255, 255, 0, 0.9); }
+        }
+
+        /* ------------------------------------------- */
+        /* 深色模式开关样式 */
+        /* ------------------------------------------- */
+
+        /* 隐藏原生的复选框 */
+        .toggle-switch input[type="checkbox"] {
+            display: none;
+        }
+
+        /* 开关的外观 (轨道) */
+        .toggle-switch .slider {
+            position: relative;
+            cursor: pointer;
+            width: 50px; /* 开关宽度 */
+            height: 28px; /* 开关高度 */
+            background-color: var(--toggle-bg-off);
+            border-radius: 28px; /* 圆角矩形 */
+            transition: background-color 0.3s;
+            display: inline-block; /* 让其与文本在同一行 */
+            vertical-align: middle; /* 垂直居中对齐 */
+        }
+
+        /* 开关的滑块 (把手) */
+        .toggle-switch .slider:before {
+            content: "";
+            position: absolute;
+            height: 20px; /* 滑块高度 */
+            width: 20px; /* 滑块宽度 */
+            left: 4px; /* 初始位置，距离左边框4px */
+            bottom: 4px; /* 距离底部4px */
+            background-color: var(--toggle-handle-color);
+            border-radius: 50%; /* 圆形滑块 */
+            transition: transform 0.3s;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2); /* 简单阴影 */
+        }
+
+        /* 当复选框被选中时，改变轨道颜色 */
+        .toggle-switch input[type="checkbox"]:checked + .slider {
+            background-color: var(--toggle-bg-on); /* 使用蓝色主题色 */
+        }
+
+        /* 当复选框被选中时，滑块移动到右侧 */
+        .toggle-switch input[type="checkbox"]:checked + .slider:before {
+            transform: translateX(22px); /* 移动距离 = 轨道宽度 - 滑块宽度 - 2 * 左右边距 (50 - 20 - 4*2 = 22) */
+        }
+
+        /* 标签文本与开关对齐 */
+        .toggle-switch label {
+            display: flex;
+            align-items: center; /* 确保label内部的文本和开关垂直居中 */
+            gap: 10px; /* 文本和开关之间的间距 */
+            cursor: pointer;
+        }
+    </style>
+</head>
+<body class="min-h-screen flex flex-col items-center justify-center py-8 font-sans">
+
+    <h1 class="text-4xl font-bold mb-6">五子棋</h1>
+
+    <div id="game-status" class="text-2xl font-semibold mb-6"></div>
+
+    <div id="board" class="select-none">
+        <!-- 棋盘的点击区域 (board-cell) 和星位 (star-point) 将由 JS 动态生成并添加到这里 -->
+        <!-- 棋子也将由 JS 动态生成并放置到相应的 board-cell 中 -->
+    </div>
+
+    <!-- 按钮区域 -->
+    <div class="flex gap-4 mt-8">
+        <button id="resetButton" class="px-6 py-3 bg-red-600 hover:bg-red-700 text-white font-bold rounded-lg shadow-lg transition duration-200 ease-in-out transform hover:scale-105">
+            重置游戏
+        </button>
+        <button id="settingsButton" class="px-6 py-3 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-lg shadow-lg transition duration-200 ease-in-out transform hover:scale-105">
+            设置
+        </button>
+    </div>
+
+    <!-- 设置模态窗口 (Modal) -->
+    <div id="settingsModal" class="hidden fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+        <div class="bg-white p-8 rounded-lg shadow-xl w-96">
+            <h2 class="text-2xl font-bold mb-6 text-gray-800 text-center">游戏设置</h2>
+
+            <div class="mb-4">
+                <label for="boardSizeSelect" class="block text-lg font-medium text-gray-700 mb-2">棋盘大小:</label>
+                <select id="boardSizeSelect" class="block w-full py-2 px-3 border border-gray-300 bg-white rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm">
+                    <option value="9">9x9 (围棋小盘)</option>
+                    <option value="15" selected>15x15 (五子棋标准)</option>
+                    <option value="19">19x19 (围棋标准)</option>
+                </select>
+            </div>
+
+            <div class="mb-4">
+                <label for="stoneStyleSelect" class="block text-lg font-medium text-gray-700 mb-2">棋子样式:</label>
+                <select id="stoneStyleSelect" class="block w-full py-2 px-3 border border-gray-300 bg-white rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm">
+                    <option value="default">默认</option>
+                    <option value="glossy">光泽</option>
+                    <option value="matte">哑光</option>
+                </select>
+            </div>
+
+            <div class="mb-6">
+                <label class="toggle-switch text-lg font-medium text-gray-700">
+                    深色模式
+                    <input type="checkbox" id="darkModeToggle">
+                    <span class="slider"></span>
+                </label>
+            </div>
+
+            <div class="flex justify-end space-x-4">
+                <button id="saveSettingsButton" class="px-6 py-2 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-lg shadow-md transition duration-200">
+                    保存设置
+                </button>
+                <button id="closeSettingsButton" class="px-6 py-2 bg-gray-300 hover:bg-gray-400 text-gray-800 font-bold rounded-lg shadow-md transition duration-200">
+                    关闭
+                </button>
+            </div>
+        </div>
+    </div>
+
+
+    <script>
+        let BOARD_SIZE = 15;
+        const EMPTY = 0;
+        const BLACK = 1;
+        const WHITE = 2;
+
+        let board = [];
+        let currentPlayer = BLACK;
+        let gameOver = false;
+        let currentStoneStyle = 'default'; // NEW: 默认棋子样式
+
+        const boardElement = document.getElementById('board');
+        const gameStatusElement = document.getElementById('game-status');
+        const resetButton = document.getElementById('resetButton');
+
+        const settingsButton = document.getElementById('settingsButton');
+        const settingsModal = document.getElementById('settingsModal');
+        const boardSizeSelect = document.getElementById('boardSizeSelect');
+        const stoneStyleSelect = document.getElementById('stoneStyleSelect'); // NEW: 棋子样式选择器
+        const darkModeToggle = document.getElementById('darkModeToggle');
+        const saveSettingsButton = document.getElementById('saveSettingsButton');
+        const closeSettingsButton = document.getElementById('closeSettingsButton');
+
+        const gridUnit = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--grid-unit'));
+        const boardMargin = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--board-margin'));
+
+        /**
+         * 初始化游戏状态和棋盘。
+         */
+        function initializeGame() {
+            board = Array(BOARD_SIZE).fill(0).map(() => Array(BOARD_SIZE).fill(EMPTY));
+            currentPlayer = BLACK;
+            gameOver = false;
+
+            // 清除所有棋子的获胜高亮效果
+            document.querySelectorAll('.winning-stone').forEach(stone => {
+                stone.classList.remove('winning-stone');
+            });
+
+            createBoardHTML(); // 重新生成棋盘的HTML结构
+            updateStatus(); // 更新游戏状态显示
+        }
+
+        /**
+         * 动态创建棋盘的 HTML (包括点击区域和星位)。
+         */
+        function createBoardHTML() {
+            boardElement.innerHTML = ''; // 清空现有棋盘内容
+
+            const boardCellHalf = gridUnit / 2;
+
+            for (let i = 0; i < BOARD_SIZE; i++) {
+                for (let j = 0; j < BOARD_SIZE; j++) {
+                    const cell = document.createElement('div');
+                    cell.classList.add('board-cell');
+                    cell.dataset.row = i;
+                    cell.dataset.col = j;
+
+                    cell.style.width = `${gridUnit}px`;
+                    cell.style.height = `${gridUnit}px`;
+                    cell.style.top = `${i * gridUnit + boardMargin - boardCellHalf}px`;
+                    cell.style.left = `${j * gridUnit + boardMargin - boardCellHalf}px`;
+
+                    cell.addEventListener('click', () => handleClick(i, j));
+                    boardElement.appendChild(cell);
+
+                    let isStarPoint = false;
+                    if (BOARD_SIZE === 19) {
+                        const starPositions = [3, 9, 15];
+                        if (starPositions.includes(i) && starPositions.includes(j)) {
+                            isStarPoint = true;
+                        }
+                    } else if (BOARD_SIZE === 15) {
+                        if (((i === 3 || i === 11) && (j === 3 || j === 11)) || (i === 7 && j === 7)) {
+                            isStarPoint = true;
+                        }
+                    } else if (BOARD_SIZE === 9) {
+                        const starPositions = [2, 6];
+                        if ((starPositions.includes(i) && starPositions.includes(j)) || (i === 4 && j === 4)) {
+                            isStarPoint = true;
+                        }
+                    }
+
+                    if (isStarPoint) {
+                        const starPoint = document.createElement('div');
+                        starPoint.classList.add('star-point');
+                        starPoint.style.top = `${i * gridUnit + boardMargin}px`;
+                        starPoint.style.left = `${j * gridUnit + boardMargin}px`;
+                        boardElement.appendChild(starPoint);
+                    }
+                }
+            }
+        }
+
+        /**
+         * 处理用户点击棋盘的事件。
+         */
+        function handleClick(row, col) {
+            if (gameOver || board[row][col] !== EMPTY) {
+                return;
+            }
+
+            board[row][col] = currentPlayer;
+            renderStone(row, col, currentPlayer); // 在UI上显示棋子
+
+            const winLine = checkWin(row, col);
+            if (winLine) {
+                gameStatusElement.textContent = `${currentPlayer === BLACK ? '黑棋' : '白棋'} 获胜！`;
+                gameOver = true;
+
+                winLine.forEach(coord => {
+                    const stoneElement = boardElement.querySelector(`.stone[data-row="${coord.row}"][data-col="${coord.col}"]`);
+                    if (stoneElement) {
+                        stoneElement.classList.add('winning-stone');
+                    }
+                });
+
+            } else {
+                currentPlayer = currentPlayer === BLACK ? WHITE : BLACK;
+                updateStatus();
+            }
+        }
+
+        /**
+         * 在棋盘的特定位置创建一个棋子并显示。
+         */
+        function renderStone(row, col, player) {
+            const stone = document.createElement('div');
+            // 根据玩家和当前选择的样式添加对应的类
+            const playerClassPrefix = player === BLACK ? 'stone-black-' : 'stone-white-';
+            stone.classList.add('stone', playerClassPrefix + currentStoneStyle);
+
+            stone.dataset.row = row;
+            stone.dataset.col = col;
+
+            stone.style.top = `${row * gridUnit + boardMargin}px`;
+            stone.style.left = `${col * gridUnit + boardMargin}px`;
+
+            boardElement.appendChild(stone);
+
+            stone.offsetWidth;
+            stone.classList.add('placed');
+        }
+
+        /**
+         * 更新游戏状态信息（如当前玩家）。
+         */
+        function updateStatus() {
+            if (!gameOver) {
+                gameStatusElement.textContent = `当前玩家：${currentPlayer === BLACK ? '黑棋' : '白棋'}`;
+            }
+        }
+
+        /**
+         * 检查当前落子后是否有玩家获胜 (五子连珠)。
+         */
+        function checkWin(row, col) {
+            const player = board[row][col];
+            const directions = [
+                [0, 1],   // 水平 (右)
+                [1, 0],   // 垂直 (下)
+                [1, 1],   // 对角线 (\) (右下)
+                [1, -1]   // 对角线 (/) (左下)
+            ];
+
+            for (const [dr, dc] of directions) {
+                let count = 1;
+                const currentLine = [{ row, col }];
+
+                for (let i = 1; i < 5; i++) {
+                    const nr = row + dr * i;
+                    const nc = col + dc * i;
+                    if (nr >= 0 && nr < BOARD_SIZE && nc >= 0 && nc < BOARD_SIZE && board[nr][nc] === player) {
+                        count++;
+                        currentLine.push({ row: nr, col: nc });
+                    } else {
+                        break;
+                    }
+                }
+
+                for (let i = 1; i < 5; i++) {
+                    const nr = row - dr * i;
+                    const nc = col - dc * i;
+                    if (nr >= 0 && nr < BOARD_SIZE && nc >= 0 && nc < BOARD_SIZE && board[nr][nc] === player) {
+                        count++;
+                        currentLine.unshift({ row: nr, col: nc });
+                    } else {
+                        break;
+                    }
+                }
+
+                if (count >= 5) {
+                    return currentLine;
+                }
+            }
+            return null;
+        }
+
+        /**
+         * 应用或移除深色模式。
+         */
+        function applyDarkMode(isDarkMode) {
+            if (isDarkMode) {
+                document.body.classList.add('dark-mode');
+            } else {
+                document.body.classList.remove('dark-mode');
+            }
+            localStorage.setItem('darkModeEnabled', isDarkMode);
+            createBoardHTML(); // 重新生成棋盘，会清除现有棋子
+        }
+
+        // 绑定重置按钮的点击事件
+        resetButton.addEventListener('click', initializeGame);
+
+        // 绑定设置按钮的点击事件
+        settingsButton.addEventListener('click', () => {
+            settingsModal.classList.remove('hidden');
+            boardSizeSelect.value = BOARD_SIZE.toString();
+            // NEW: 设置棋子样式选择框的当前值
+            stoneStyleSelect.value = currentStoneStyle;
+            darkModeToggle.checked = document.body.classList.contains('dark-mode');
+        });
+
+        // 绑定关闭设置按钮的点击事件
+        closeSettingsButton.addEventListener('click', () => {
+            settingsModal.classList.add('hidden');
+        });
+
+        // 绑定保存设置按钮的点击事件
+        saveSettingsButton.addEventListener('click', () => {
+            const newBoardSize = parseInt(boardSizeSelect.value);
+            if (newBoardSize !== BOARD_SIZE) {
+                BOARD_SIZE = newBoardSize;
+                document.documentElement.style.setProperty('--board-dimension', newBoardSize);
+                initializeGame();
+            }
+
+            // 处理深色模式设置
+            const isDarkModeEnabled = darkModeToggle.checked;
+            applyDarkMode(isDarkModeEnabled);
+
+            // NEW: 处理棋子样式设置
+            const newStoneStyle = stoneStyleSelect.value;
+            if (newStoneStyle !== currentStoneStyle) {
+                currentStoneStyle = newStoneStyle;
+                localStorage.setItem('stoneStyle', currentStoneStyle); // 保存到 localStorage
+
+                // 遍历并更新棋盘上所有已落子的棋子样式
+                document.querySelectorAll('.stone').forEach(stoneElement => {
+                    // 先移除所有可能的旧样式类
+                    stoneElement.classList.remove(
+                        'stone-black-default', 'stone-white-default',
+                        'stone-black-glossy', 'stone-white-glossy',
+                        'stone-black-matte', 'stone-white-matte'
+                    );
+
+                    // 根据棋子的颜色和新样式添加新类
+                    const stoneRow = parseInt(stoneElement.dataset.row);
+                    const stoneCol = parseInt(stoneElement.dataset.col);
+                    const playerOfStone = board[stoneRow][stoneCol]; // 获取该位置棋子的玩家
+                    const playerClassPrefix = playerOfStone === BLACK ? 'stone-black-' : 'stone-white-';
+                    stoneElement.classList.add(playerClassPrefix + newStoneStyle);
+                });
+            }
+
+            settingsModal.classList.add('hidden');
+        });
+
+        // 页面加载时，检查 localStorage 中的设置并应用
+        document.addEventListener('DOMContentLoaded', () => {
+            // 加载深色模式设置
+            const savedDarkMode = localStorage.getItem('darkModeEnabled');
+            if (savedDarkMode === 'true') {
+                applyDarkMode(true);
+            } else if (savedDarkMode === 'false') {
+                applyDarkMode(false);
+            }
+
+            // NEW: 加载棋子样式设置
+            const savedStoneStyle = localStorage.getItem('stoneStyle');
+            if (savedStoneStyle) {
+                currentStoneStyle = savedStoneStyle;
+                stoneStyleSelect.value = currentStoneStyle; // 设置下拉框选中值
+            } else {
+                currentStoneStyle = 'default'; // 如果没有保存，则使用默认样式
+                stoneStyleSelect.value = 'default'; // 确保下拉框显示默认值
+            }
+
+            initializeGame(); // 初始棋盘创建
+        });
+    </script>
+</body>
+</html>
