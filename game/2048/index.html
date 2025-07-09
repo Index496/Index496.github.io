@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>【2048】</title>
+    <title>2048</title> <!-- 这里已修改为 2048 -->
     <!-- Tailwind CSS CDN -->
     <script src="https://cdn.tailwindcss.com"></script>
     <style>
@@ -32,6 +32,7 @@
             grid-template-columns: repeat(var(--grid-size), 1fr);
             grid-template-rows: repeat(var(--grid-size), 1fr);
             gap: var(--grid-gap);
+            /* 将宽度和高度通过 JS 传入的 CSS 变量控制 */
             width: var(--container-width);
             height: var(--container-height);
             position: relative; /* 用于子级砖块的绝对定位 */
@@ -54,8 +55,7 @@
             font-weight: bold;
             z-index: 2; /* 砖块应在网格单元格之上 */
 
-            /* 砖块尺寸和位置的 CSS 变量 */
-            --tile-size: calc((var(--container-width) - (var(--grid-size) + 1) * var(--grid-gap)) / var(--grid-size));
+            /* 砖块尺寸和位置的 CSS 变量现在将由 JS 设置的 --tile-size 驱动 */
             width: var(--tile-size);
             height: var(--tile-size);
             font-size: calc(var(--tile-size) / 3); /* 动态字体大小 */
@@ -160,17 +160,12 @@
     <script>
         const GRID_SIZE = 4;
         const GRID_GAP = 12; // px
-        const CONTAINER_WIDTH = 500; // px
         const ANIMATION_DURATION = 150; // ms (应与 CSS transition 持续时间匹配)
         const TOUCH_SWIPE_THRESHOLD = 50; // 触摸滑动最小距离 (px)
 
-        // 设置 CSS 变量，供样式使用
-        document.documentElement.style.setProperty('--grid-size', GRID_SIZE);
-        document.documentElement.style.setProperty('--grid-gap', `${GRID_GAP}px`);
-        document.documentElement.style.setProperty('--container-width', `${CONTAINER_WIDTH}px`);
-        document.documentElement.style.setProperty('--container-height', `${CONTAINER_WIDTH}px`); /* 使其为正方形 */
-
-        const TILE_SIZE = (CONTAINER_WIDTH - (GRID_SIZE + 1) * GRID_GAP) / GRID_SIZE;
+        // 声明为 let，以便可以根据屏幕尺寸重新赋值
+        let CONTAINER_WIDTH_PX;
+        let TILE_SIZE;
 
         let board = Array(GRID_SIZE).fill(0).map(() => Array(GRID_SIZE).fill(null)); // 存储 Tile 对象或 null
         let tiles = new Map(); // Map<tileId, TileObject> 用于快速查找和管理所有活动砖块
@@ -201,13 +196,9 @@
 
         // 通用播放函数
         function playSound(soundType) {
-            // Web Audio API 通常要求有用户交互才能首次播放声音。
-            // 确保在第一次用户交互（例如点击新游戏按钮）后初始化或恢复 AudioContext。
-            // 我们的游戏逻辑已经确保了这一点，因为 playSound 是在用户操作后才调用的。
             const context = getAudioContext();
             if (context.state === 'suspended') {
                 context.resume().then(() => {
-                    // console.log('AudioContext resumed!');
                     _playSoundImpl(soundType);
                 }).catch(e => console.error('Error resuming AudioContext:', e));
             } else {
@@ -379,6 +370,26 @@
         }
         // --- 音效合成部分结束 ---
 
+        // 用于设置游戏尺寸的函数 (自适应)
+        function setResponsiveDimensions() {
+            // 计算容器宽度：最大 500px，最小 94vw (留点边距)
+            CONTAINER_WIDTH_PX = Math.min(500, window.innerWidth * 0.94);
+
+            // 设置 CSS 变量，供 CSS 样式使用
+            document.documentElement.style.setProperty('--grid-size', GRID_SIZE);
+            document.documentElement.style.setProperty('--grid-gap', `${GRID_GAP}px`);
+            document.documentElement.style.setProperty('--container-width', `${CONTAINER_WIDTH_PX}px`);
+            document.documentElement.style.setProperty('--container-height', `${CONTAINER_WIDTH_PX}px`); /* 使其为正方形 */
+
+            // 重新计算 TILE_SIZE，因为容器宽度已改变
+            TILE_SIZE = (CONTAINER_WIDTH_PX - (GRID_SIZE + 1) * GRID_GAP) / GRID_SIZE;
+            // 同样将计算出的 TILE_SIZE 传递给 CSS 变量，以影响瓷砖的实际大小和字体
+            document.documentElement.style.setProperty('--tile-size', `${TILE_SIZE}px`);
+
+            // 重新渲染所有砖块以更新其位置（它们的位置依赖于 TILE_SIZE）
+            renderTiles();
+        }
+
 
         class Tile {
             constructor(value, r, c, id) {
@@ -393,7 +404,7 @@
                 this.element = null; // DOM 元素引用
             }
 
-            // 计算砖块在棋盘上的像素位置
+            // 计算砖块在棋盘上的像素位置，现在依赖于全局的 `TILE_SIZE` 变量
             get x() { return this.c * (TILE_SIZE + GRID_GAP) + GRID_GAP; }
             get y() { return this.r * (TILE_SIZE + GRID_GAP) + GRID_GAP; }
         }
@@ -418,6 +429,9 @@
             gameBoardElement.querySelectorAll('.tile').forEach(tileEl => tileEl.remove());
             // 重新渲染网格单元格（如果尚未存在）
             renderGridCells();
+
+            // 首次初始化游戏时，根据当前视口尺寸设置游戏板尺寸
+            setResponsiveDimensions();
 
             addRandomTile();
             addRandomTile();
@@ -856,11 +870,13 @@
             }
         }, { passive: false });
 
-
         newGameButtonTop.addEventListener('click', initializeGame);
 
         // 页面加载时初始化游戏
         initializeGame();
+
+        // 监听窗口大小变化事件，以响应式调整游戏尺寸
+        window.addEventListener('resize', setResponsiveDimensions);
 
     </script>
 </body>
