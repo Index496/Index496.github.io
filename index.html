@@ -6,17 +6,158 @@
     <title>一切，从index.html开始。</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <style>
+        /* 
+         * 1. 动态渐变背景
+         * 创建一个巨大的渐变背景，并通过动画移动它的位置，
+         * 从而产生一种背景在缓慢流动的视觉效果。
+        */
+        @keyframes gradient-animation {
+            0% { background-position: 0% 50%; }
+            50% { background-position: 100% 50%; }
+            100% { background-position: 0% 50%; }
+        }
+
+        .animated-gradient {
+            background: linear-gradient(-45deg, #ee7752, #e73c7e, #23a6d5, #23d5ab);
+            background-size: 400% 400%;
+            animation: gradient-animation 15s ease infinite;
+        }
+
+        /* 
+         * 2. 标题打字效果的光标
+         */
+        #cursor {
+            animation: blink 1s step-end infinite;
+        }
+
+        @keyframes blink {
+            from, to { color: transparent }
+            50% { color: #e73c7e; } /* 光标颜色 */
+        }
+        .dark #cursor {
+            animation: dark-blink 1s step-end infinite;
+        }
+        @keyframes dark-blink {
+            from, to { color: transparent }
+            50% { color: #23d5ab; } /* 暗色模式下的光标颜色 */
+        }
+
+        /* 
+         * 3. 页面载入时卡片的浮入动画
+        */
+        @keyframes float-in {
+            from {
+                opacity: 0;
+                transform: translateY(20px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+        
+        .card-container {
+            animation: float-in 0.8s ease-out forwards;
+        }
     </style>
 </head>
-<body class="bg-gray-100 dark:bg-gray-900 flex items-center justify-center min-h-screen">
-    <div class="text-center p-8 bg-white dark:bg-gray-800 rounded-lg shadow-lg">
-        <h1 class="text-4xl font-bold text-gray-800 dark:text-white mb-4">一切，从index.html开始。</h1>
-        <p class="text-lg text-gray-600 dark:text-gray-300 mb-6">Index496.github.io</p>
-        <!-- 添加按钮 -->
-        <a href="https://index496.github.io/game/" target="_blank" rel="noopener noreferrer" 
-           class="inline-block bg-blue-500 hover:bg-blue-600 text-white font-bold py-3 px-6 rounded-lg transition duration-300 ease-in-out shadow-md">
-            看看我做的游戏？
-        </a>
+<body class="animated-gradient flex items-center justify-center min-h-screen p-4">
+
+    <!-- 
+      主卡片容器
+      - perspective: 为子元素的3D变换创造透视效果
+    -->
+    <div id="interactive-card-wrapper" class="perspective-[1000px] card-container">
+        <!-- 
+          真正的卡片
+          - 玻璃拟态效果: bg-white/20 backdrop-blur-lg
+          - 阴影和边框增加立体感
+          - transition-transform: 让鼠标移开时的恢复动画更平滑
+        -->
+        <div id="interactive-card" class="w-full max-w-md text-center p-8 sm:p-12 rounded-2xl shadow-2xl 
+                                          bg-white/20 dark:bg-black/30 backdrop-blur-lg 
+                                          border border-white/30 dark:border-white/10
+                                          transition-transform duration-300 ease-out">
+            
+            <!-- 标题，使用 min-h-[4rem] 来防止打字时布局跳动 -->
+            <!-- 【已更改】将 text-gray-800 修改为 text-white -->
+            <h1 id="typing-title" class="text-3xl sm:text-4xl font-bold text-white mb-4 min-h-[4rem] sm:min-h-[3rem]">
+                <!-- 打字效果将在这里显示 -->
+            </h1>
+            
+            <!-- 【已更改】将 text-gray-700 修改为 text-gray-200，dark 模式下为 text-gray-300 -->
+            <p class="text-lg text-gray-200 dark:text-gray-300 mb-8">Index496.github.io</p>
+            
+            <!-- 
+                按钮
+                - group: 用于实现悬停时内部 icon 的联动效果
+                - transition: 统一管理所有过渡动画
+                - hover 效果增强: transform scale-105, shadow-lg
+            -->
+            <a href="https://index496.github.io/game/" target="_blank" rel="noopener noreferrer" 
+               class="group inline-flex items-center bg-blue-500 hover:bg-blue-600 text-white font-bold py-3 px-6 rounded-lg transition duration-300 ease-in-out shadow-md hover:shadow-xl transform hover:scale-105">
+                <span>看看我做的游戏？</span>
+                <!-- 箭头图标，悬停时会向右移动 -->
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 ml-2 transition-transform duration-300 ease-in-out group-hover:translate-x-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 8l4 4m0 0l-4 4m4-4H3" />
+                </svg>
+            </a>
+        </div>
     </div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            // --- 标题打字机效果 ---
+            const titleElement = document.getElementById('typing-title');
+            const textToType = "一切，从index.html开始。";
+            let index = 0;
+            const typingSpeed = 100; // 打字速度 (ms)
+
+            // 添加光标
+            titleElement.innerHTML = '<span id="cursor">|</span>';
+            const cursor = document.getElementById('cursor');
+
+            function type() {
+                if (index < textToType.length) {
+                    // 在光标前插入字符
+                    cursor.insertAdjacentText('beforebegin', textToType.charAt(index));
+                    index++;
+                    setTimeout(type, typingSpeed);
+                } else {
+                    // 打字结束后，让光标停止闪烁（或者直接移除）
+                    cursor.style.animation = 'none';
+                    cursor.style.opacity = '1'; // 保持显示
+                }
+            }
+            // 延迟一点开始，给页面加载动画留出时间
+            setTimeout(type, 800);
+
+
+            // --- 3D 悬浮交互效果 ---
+            const card = document.getElementById('interactive-card');
+            const cardWrapper = document.getElementById('interactive-card-wrapper');
+
+            cardWrapper.addEventListener('mousemove', function(e) {
+                const rect = card.getBoundingClientRect();
+                const x = e.clientX - rect.left; // 鼠标在元素内的X坐标
+                const y = e.clientY - rect.top;  // 鼠标在元素内的Y坐标
+
+                const centerX = rect.width / 2;
+                const centerY = rect.height / 2;
+                
+                const rotateX = (y - centerY) / 20; // 旋转幅度可以调整
+                const rotateY = (centerX - x) / 20; // 旋转幅度可以调整
+
+                card.style.transform = `rotateX(${rotateX}deg) rotateY(${rotateY}deg) scale(1.05)`;
+                card.style.transition = 'transform 0.1s linear';
+            });
+
+            cardWrapper.addEventListener('mouseleave', function() {
+                // 鼠标移开时，平滑地恢复原状
+                card.style.transform = 'rotateX(0) rotateY(0) scale(1)';
+                card.style.transition = 'transform 0.5s cubic-bezier(0.23, 1, 0.32, 1)';
+            });
+        });
+    </script>
 </body>
 </html>
